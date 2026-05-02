@@ -20,24 +20,18 @@ The service is a FastAPI application backed by SQLAlchemy (SQLite for local use,
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-org/testscribe.git
+git clone git@github.com:RAJUSHANIGARAPU/testscribe.git
 cd testscribe
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Create .env (see Environment Variables below)
+# 2. Configure environment
 cp .env.example .env
-# Edit .env and fill in JWT_SECRET_KEY, ANTHROPIC_API_KEY, and Stripe keys
+# Fill in: JWT_SECRET_KEY, ANTHROPIC_API_KEY, and Stripe keys
 
-# 3. Initialise the database
-make migrate
-
-# 4. Start the development server
+# 3. Start the server (creates DB tables automatically on first run)
 make dev
-# Server running at http://localhost:8000
-
-# 5. Open the demo
-open http://localhost:8000/demo
+# → http://localhost:8000
 ```
 
 To run with Docker:
