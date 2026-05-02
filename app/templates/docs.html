@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block title %}API Documentation — TestScribe{% endblock %}
+
+{% block meta_description %}
+  TestScribe REST API documentation. Generate test cases programmatically from your CI/CD pipeline or test management tools. Authentication, endpoints, and code examples.
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .docs-code {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    color: #94a3b8;
+  }
+  .docs-code .kw  { color: #818cf8; }
+  .docs-code .str { color: #86efac; }
+  .docs-code .cmt { color: #475569; }
+  .docs-code .val { color: #fbbf24; }
+  .docs-code .key { color: #7dd3fc; }
+
+  .method-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-family: monospace;
+  }
+  .method-post { background: #1e3a5f; color: #60a5fa; border: 1px solid #2563eb44; }
+  .method-get  { background: #14532d; color: #4ade80; border: 1px solid #16a34a44; }
+
+  .sidebar-link {
+    display: block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+  .sidebar-link:hover, .sidebar-link.active {
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+
+  .param-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .param-table th {
+    background: #1e293b;
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    border-bottom: 1px solid #334155;
+  }
+  .param-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e293b;
+    color: #94a3b8;
+    vertical-align: top;
+  }
+  .param-table td:first-child { font-family: monospace; color: #7dd3fc; }
+  .param-table tr:last-child td { border-bottom: none; }
+  .param-table .req { color: #f87171; font-size: 0.7rem; font-weight: 600; }
+  .param-table .opt { color: #64748b; font-size: 0.7rem; }
+
+  .section-anchor { scroll-margin-top: 80px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+  <div class="flex gap-8 items-start">
+
+    <!-- Sidebar navigation -->
+    <aside class="hidden lg:block w-52 shrink-0 sticky top-24">
+      <nav class="space-y-1">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-3">API Reference</p>
+        <a href="#overview"       class="sidebar-link">Overview</a>
+        <a href="#authentication" class="sidebar-link">Authentication</a>
+        <a href="#generate"       class="sidebar-link">Generate Tests</a>
+        <a href="#get-generation" class="sidebar-link">Get Generation</a>
+        <a href="#list"           class="sidebar-link">List Generations</a>
+        <a href="#usage"          class="sidebar-link">Check Usage</a>
+        <a href="#errors"         class="sidebar-link">Errors</a>
+      </nav>
+    </aside>
+
+    <!-- Main docs content -->
+    <article class="flex-1 min-w-0 space-y-16 pb-20">
+
+      <!-- Overview -->
+      <section id="overview" class="section-anchor">
+        <h1 class="text-3xl font-bold text-slate-100 mb-3">API Reference</h1>
+        <p class="text-slate-400 leading-relaxed mb-4">
+          TestScribe API lets you generate test cases programmatically from your CI/CD pipeline or test management tools.
+          The API is a simple JSON REST API — send your user story or OpenAPI spec, get back structured test cases.
+        </p>
+        <p class="text-slate-400 leading-relaxed">
+          Base URL:
+          <code class="bg-slate-800 border border-slate-700 text-indigo-300 px-2 py-0.5 rounded text-sm font-mono">https://testscribe.ai/api/v1</code>
+        </p>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication" class="section-anchor">
+        <h2 class="text-2xl font-bold text-slate-100 mb-4">Authentication</h2>
+        <p class="text-slate-400 mb-4 leading-relaxed">
+          All API requests must include an API key in the <code class="bg-slate-800 text-indigo-300 px-1.5 py-0.5 rounded text-xs font-mono">X-API-Key</code> header.
+          You can also use a Bearer JWT obtained from <code class="bg-slate-800 text-indigo-300 px-1.5 py-0.5 rounded text-xs font-mono">POST /auth/login</code>.
+          Get your API key from the <a href="/dashboard" class="text-indigo-400 hover:text-indigo-300 underline">dashboard</a>.
+        </p>
+
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">API Key (recommended for CI/CD)</p>
+        <pre class="docs-code mb-4">curl https://testscribe.ai/api/v1/generations \
+  -H <span class="str">"X-API-Key: tsc_your_api_key_here"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"input_type":"user_story","input_text":"...","output_format":"gherkin"}'</span></pre>
+
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Bearer JWT</p>
+        <pre class="docs-code">curl https://testscribe.ai/api/v1/generations \
+  -H <span class="str">"Authorization: Bearer &lt;access_token&gt;"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"input_type":"user_story","input_text":"...","output_format":"gherkin"}'</span></pre>
+      </section>
+
+      <!-- POST /generations -->
+      <section id="generate" class="section-anchor">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="method-badge method-post">POST</span>
+          <h2 class="text-2xl font-bold text-slate-100">/generations</h2>
+        </div>
+        <p class="text-slate-400 mb-6 leading-relaxed">
+          Submit a user story, requirements document, OpenAPI spec, or Jira text for test case generation.
+          Returns a generation object. If the status is <code class="bg-slate-800 text-yellow-300 px-1.5 py-0.5 rounded text-xs font-mono">pending</code>,
+          poll <code class="bg-slate-800 text-indigo-300 px-1.5 py-0.5 rounded text-xs font-mono">GET /generations/{id}</code> until complete.
+        </p>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Request body</h3>
+        <div class="rounded-xl border border-slate-700 overflow-hidden mb-6">
+          <table class="param-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>input_type</td>
+                <td style="color:#94a3b8">string</td>
+                <td><span class="req">Required</span></td>
+                <td>One of: <code>user_story</code>, <code>requirements</code>, <code>openapi</code>, <code>jira</code>, <code>raw</code></td>
+              </tr>
+              <tr>
+                <td>input_text</td>
+                <td style="color:#94a3b8">string</td>
+                <td><span class="req">Required</span></td>
+                <td>The raw text of the user story, spec, or document. Max tokens depend on your plan.</td>
+              </tr>
+              <tr>
+                <td>output_format</td>
+                <td style="color:#94a3b8">string</td>
+                <td><span class="req">Required</span></td>
+                <td>One of: <code>gherkin</code>, <code>tabular</code>, <code>pytest</code>. Free plan: <code>gherkin</code> only.</td>
+              </tr>
+              <tr>
+                <td>persona</td>
+                <td style="color:#94a3b8">string</td>
+                <td><span class="opt">Optional</span></td>
+                <td>Custom test persona identifier (Pro plan only). Controls tone and depth of security scenarios.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Response fields</h3>
+        <div class="rounded-xl border border-slate-700 overflow-hidden mb-6">
+          <table class="param-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>id</td><td style="color:#94a3b8">string</td><td>UUID of the generation</td></tr>
+              <tr><td>status</td><td style="color:#94a3b8">string</td><td><code>pending</code>, <code>processing</code>, <code>completed</code>, or <code>failed</code></td></tr>
+              <tr><td>output_text</td><td style="color:#94a3b8">string | null</td><td>Generated test cases. Present when status is <code>completed</code>.</td></tr>
+              <tr><td>tokens_used</td><td style="color:#94a3b8">integer | null</td><td>Total tokens consumed by this generation</td></tr>
+              <tr><td>created_at</td><td style="color:#94a3b8">string</td><td>ISO 8601 timestamp</td></tr>
+              <tr><td>error_message</td><td style="color:#94a3b8">string | null</td><td>Human-readable error description when status is <code>failed</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">curl example</h3>
+        <pre class="docs-code mb-6">curl -X POST https://testscribe.ai/api/v1/generations \
+  -H <span class="str">"X-API-Key: tsc_your_api_key_here"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "input_type": "user_story",
+    "input_text": "As a user, I want to log in with email and password so I can access my account.\n\nAC:\n- Valid credentials → redirect to dashboard\n- Invalid credentials → show error message\n- After 5 failed attempts → lock account for 15 minutes",
+    "output_format": "gherkin"
+  }'</span></pre>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Python example</h3>
+        <pre class="docs-code">import requests
+
+response = requests.post(
+    <span class="str">"https://testscribe.ai/api/v1/generations"</span>,
+    headers={<span class="str">"X-API-Key"</span>: <span class="str">"tsc_your_api_key_here"</span>},
+    json={
+        <span class="key">"input_type"</span>: <span class="str">"user_story"</span>,
+        <span class="key">"input_text"</span>: <span class="str">"As a user, I want to log in..."</span>,
+        <span class="key">"output_format"</span>: <span class="str">"gherkin"</span>,
+    }
+)
+data = response.json()
+
+<span class="kw">if</span> data[<span class="str">"status"</span>] == <span class="str">"completed"</span>:
+    print(data[<span class="str">"output_text"</span>])
+<span class="kw">elif</span> data[<span class="str">"status"</span>] == <span class="str">"pending"</span>:
+    <span class="cmt"># Poll until done</span>
+    gen_id = data[<span class="str">"id"</span>]
+    <span class="kw">while True</span>:
+        r = requests.get(
+            f<span class="str">"https://testscribe.ai/api/v1/generations/{gen_id}"</span>,
+            headers={<span class="str">"X-API-Key"</span>: <span class="str">"tsc_your_api_key_here"</span>},
+        )
+        result = r.json()
+        <span class="kw">if</span> result[<span class="str">"status"</span>] <span class="kw">in</span> (<span class="str">"completed"</span>, <span class="str">"failed"</span>):
+            <span class="kw">break</span>
+        time.sleep(<span class="val">2</span>)
+    print(result.get(<span class="str">"output_text"</span>))</pre>
+      </section>
+
+      <!-- GET /generations/{id} -->
+      <section id="get-generation" class="section-anchor">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="method-badge method-get">GET</span>
+          <h2 class="text-2xl font-bold text-slate-100">/generations/{id}</h2>
+        </div>
+        <p class="text-slate-400 mb-6 leading-relaxed">
+          Retrieve a single generation by ID. Use this to poll for the result of an async generation.
+        </p>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Status values</h3>
+        <div class="rounded-xl border border-slate-700 overflow-hidden mb-6">
+          <table class="param-table">
+            <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>pending</td><td>Queued, not yet started</td></tr>
+              <tr><td>processing</td><td>Generation in progress</td></tr>
+              <tr><td>completed</td><td>Done. <code>output_text</code> is populated.</td></tr>
+              <tr><td>failed</td><td>An error occurred. See <code>error_message</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Recommended polling strategy</h3>
+        <p class="text-slate-400 text-sm mb-4">
+          Poll every 2 seconds, up to 30 attempts (60 seconds). Most generations complete in 3&ndash;10 seconds.
+        </p>
+        <pre class="docs-code">curl https://testscribe.ai/api/v1/generations/&lt;id&gt; \
+  -H <span class="str">"X-API-Key: tsc_your_api_key_here"</span></pre>
+      </section>
+
+      <!-- GET /generations (list) -->
+      <section id="list" class="section-anchor">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="method-badge method-get">GET</span>
+          <h2 class="text-2xl font-bold text-slate-100">/generations</h2>
+        </div>
+        <p class="text-slate-400 mb-6 leading-relaxed">
+          List your recent generations. Returns a paginated array of generation objects, newest first.
+        </p>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Query parameters</h3>
+        <div class="rounded-xl border border-slate-700 overflow-hidden mb-6">
+          <table class="param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>limit</td><td style="color:#94a3b8">integer</td><td>20</td><td>Number of results to return. Max 100.</td></tr>
+              <tr><td>offset</td><td style="color:#94a3b8">integer</td><td>0</td><td>Pagination offset.</td></tr>
+              <tr><td>status</td><td style="color:#94a3b8">string</td><td>—</td><td>Filter by status: <code>completed</code>, <code>failed</code>, etc.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <pre class="docs-code">curl "https://testscribe.ai/api/v1/generations?limit=10&status=completed" \
+  -H <span class="str">"X-API-Key: tsc_your_api_key_here"</span></pre>
+      </section>
+
+      <!-- GET /usage -->
+      <section id="usage" class="section-anchor">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="method-badge method-get">GET</span>
+          <h2 class="text-2xl font-bold text-slate-100">/usage</h2>
+        </div>
+        <p class="text-slate-400 mb-6 leading-relaxed">
+          Returns your current usage for the billing period and your plan limits.
+        </p>
+
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Rate limits by plan</h3>
+        <div class="rounded-xl border border-slate-700 overflow-hidden mb-6">
+          <table class="param-table">
+            <thead><tr><th>Plan</th><th>Generations/month</th><th>Requests/minute</th><th>Max input tokens</th></tr></thead>
+            <tbody>
+              <tr><td>free</td><td>25</td><td>5</td><td>1,200</td></tr>
+              <tr><td>solo</td><td>200</td><td>20</td><td>4,000</td></tr>
+              <tr><td>pro</td><td>600</td><td>60</td><td>8,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <pre class="docs-code">curl https://testscribe.ai/api/v1/usage \
+  -H <span class="str">"X-API-Key: tsc_your_api_key_here"</span>
+
+<span class="cmt"># Example response</span>
+{
+  <span class="key">"plan"</span>: <span class="str">"solo"</span>,
+  <span class="key">"current_month"</span>: {
+    <span class="key">"count"</span>: <span class="val">47</span>,
+    <span class="key">"limit"</span>: <span class="val">200</span>,
+    <span class="key">"tokens_used"</span>: <span class="val">84320</span>,
+    <span class="key">"reset_at"</span>: <span class="str">"2025-06-01T00:00:00Z"</span>
+  }
+}</pre>
+      </section>
+
+      <!-- Errors -->
+      <section id="errors" class="section-anchor">
+        <h2 class="text-2xl font-bold text-slate-100 mb-4">Errors</h2>
+        <p class="text-slate-400 mb-6 leading-relaxed">
+          All errors follow a consistent JSON shape:
+        </p>
+        <pre class="docs-code mb-6">{
+  <span class="key">"detail"</span>: <span class="str">"Human-readable error message"</span>,
+  <span class="key">"code"</span>: <span class="str">"ERROR_CODE"</span>
+}</pre>
+
+        <div class="rounded-xl border border-slate-700 overflow-hidden">
+          <table class="param-table">
+            <thead><tr><th>HTTP Status</th><th>Code</th><th>When it occurs</th></tr></thead>
+            <tbody>
+              <tr>
+                <td style="color:#94a3b8">400</td>
+                <td>VALIDATION_ERROR</td>
+                <td>Missing required fields, invalid <code>input_type</code> or <code>output_format</code></td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">401</td>
+                <td>UNAUTHORIZED</td>
+                <td>Missing, invalid, or expired API key / token</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">402</td>
+                <td>LIMIT_EXCEEDED</td>
+                <td>Monthly generation limit reached for your plan</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">403</td>
+                <td>FORBIDDEN</td>
+                <td>Feature not available on your plan (e.g. pytest format on free tier)</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">404</td>
+                <td>NOT_FOUND</td>
+                <td>Generation ID does not exist or belongs to another user</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">413</td>
+                <td>INPUT_TOO_LARGE</td>
+                <td>Input text exceeds the token limit for your plan</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">429</td>
+                <td>RATE_LIMITED</td>
+                <td>Too many requests per minute. Check <code>Retry-After</code> header.</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">500</td>
+                <td>INTERNAL_ERROR</td>
+                <td>Unexpected server error. Retry with exponential backoff.</td>
+              </tr>
+              <tr>
+                <td style="color:#94a3b8">503</td>
+                <td>AI_UNAVAILABLE</td>
+                <td>Upstream AI provider temporarily unavailable. Retry after a few seconds.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </article>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Highlight active sidebar link on scroll
+  var links = document.querySelectorAll('.sidebar-link');
+  var sections = document.querySelectorAll('.section-anchor');
+
+  function onScroll() {
+    var scrollY = window.scrollY + 100;
+    var current = '';
+    sections.forEach(function (sec) {
+      if (sec.offsetTop <= scrollY) current = sec.id;
+    });
+    links.forEach(function (link) {
+      link.classList.toggle('active', link.getAttribute('href') === '#' + current);
+    });
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+{% endblock %}

@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+
+{% block title %}Live Demo — TestScribe{% endblock %}
+
+{% block meta_description %}
+  Try TestScribe free. Paste a user story or OpenAPI spec and get Gherkin BDD, tabular, or pytest test cases in seconds — no signup required.
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-slate-100">Generate Test Cases</h1>
+    <p class="text-slate-400 mt-2 text-sm">
+      Paste a user story, requirement, or OpenAPI spec. Get comprehensive test cases covering happy path, edge cases, and security.
+    </p>
+  </div>
+
+  <!-- Two-column grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+
+    <!-- LEFT COLUMN: Input -->
+    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 space-y-5">
+      <h2 class="text-lg font-semibold text-slate-100">Input</h2>
+
+      <!-- Input textarea -->
+      <div>
+        <label for="inputText" class="block text-sm font-medium text-slate-300 mb-2">
+          User Story / Spec
+        </label>
+        <textarea
+          id="inputText"
+          rows="12"
+          class="w-full font-mono text-sm bg-slate-800 text-green-300 border border-slate-600 rounded-lg p-4 resize-y focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-600"
+          placeholder="As a user, I want to reset my password by clicking a link in an email,&#10;so I can regain access to my account.&#10;&#10;AC:&#10;- Link expires in 30 minutes&#10;- Link is single-use&#10;- User can set a new password that meets requirements"
+        >As a user, I want to log into the app with my email and password.
+
+AC:
+- Correct credentials → redirect to dashboard
+- Wrong password → show "Invalid credentials" error
+- After 5 failed attempts → lock account for 15 minutes</textarea>
+      </div>
+
+      <!-- Format selector (pill buttons) -->
+      <div>
+        <label class="block text-sm font-medium text-slate-300 mb-2">Output Format</label>
+
+        <div class="flex gap-2 flex-wrap" id="formatSelector">
+          <label class="cursor-pointer" title="Given/When/Then scenarios — paste into Cucumber, Behave, or SpecFlow">
+            <input type="radio" name="outputFormat" value="gherkin" class="sr-only" checked />
+            <span class="px-4 py-2 rounded-full text-sm font-medium transition-colors select-none pill-active" data-pill="gherkin">
+              Gherkin BDD
+            </span>
+          </label>
+          <label class="cursor-pointer" title="Rows of ID / description / steps / expected result — paste into Jira or a test plan doc">
+            <input type="radio" name="outputFormat" value="tabular" class="sr-only" />
+            <span class="px-4 py-2 rounded-full text-sm font-medium transition-colors select-none pill-inactive" data-pill="tabular">
+              Tabular
+            </span>
+          </label>
+          <label class="cursor-pointer" title="Python test functions with assertions — paste directly into a pytest file">
+            <input type="radio" name="outputFormat" value="pytest" class="sr-only" />
+            <span class="px-4 py-2 rounded-full text-sm font-medium transition-colors select-none pill-inactive" data-pill="pytest">
+              Pytest
+            </span>
+          </label>
+        </div>
+        <!-- Format helper line — updates on pill selection -->
+        <p id="formatHelperText" class="text-xs text-slate-500 mt-2">
+          Given/When/Then scenarios &mdash; paste into Cucumber, Behave, or SpecFlow
+        </p>
+      </div>
+
+      <!-- Input type selector (dropdown) -->
+      <div>
+        <label for="inputType" class="block text-sm font-medium text-slate-300 mb-2">
+          Input Type
+        </label>
+        <select
+          id="inputType"
+          class="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+        >
+          <option value="user_story" selected>User Story</option>
+          <option value="requirements">Requirements</option>
+          <option value="openapi">OpenAPI Spec</option>
+          <option value="jira">Jira Text</option>
+          <option value="raw">Raw Text</option>
+        </select>
+      </div>
+
+      <!-- Generate button -->
+      <button
+        id="generateBtn"
+        title="Click to generate test cases — your first 25 are free"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-lg text-base transition-colors flex items-center justify-center gap-2"
+      >
+        <span id="generateBtnText">Generate Test Cases</span>
+        <span id="generateSpinner" class="spinner hidden"></span>
+      </button>
+
+      <p class="text-xs text-slate-500 text-center">
+        Free tier: 25 generations/month &middot; No signup for first try
+      </p>
+    </div>
+
+    <!-- RIGHT COLUMN: Output -->
+    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 space-y-4">
+
+      <!-- Header with format badge -->
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-slate-100">Generated Test Cases</h2>
+        <span id="formatBadge"
+              class="text-xs font-semibold bg-indigo-900/60 text-indigo-300 border border-indigo-700/50 px-2.5 py-0.5 rounded-full">
+          Gherkin BDD
+        </span>
+      </div>
+
+      <!-- Output container -->
+      <div id="outputContainer">
+        <!-- Empty state -->
+        <div id="emptyState" class="flex flex-col items-center justify-center py-16 text-center">
+          <div class="w-12 h-12 bg-slate-700 rounded-xl flex items-center justify-center mb-4 text-2xl">
+            &#x1F4DD;
+          </div>
+          <p class="text-slate-400 text-sm font-medium">Paste a user story on the left and click Generate.</p>
+          <p class="text-slate-500 text-xs mt-1">You&rsquo;ll see 8+ test cases here &mdash; covering happy path, edge cases, and security.</p>
+        </div>
+
+        <!-- Result area (hidden until output arrives) -->
+        <div id="resultArea" class="hidden space-y-3">
+          <textarea
+            id="outputText"
+            rows="18"
+            readonly
+            class="w-full font-mono text-sm bg-slate-900 text-slate-200 border border-slate-600 rounded-lg p-4 resize-y focus:outline-none"
+          ></textarea>
+
+          <!-- Stats row -->
+          <div id="statsRow" class="flex gap-3 flex-wrap">
+            <span id="tokensBadge"
+                  class="text-xs bg-slate-700 text-slate-300 border border-slate-600 px-2.5 py-1 rounded-md">
+              — tokens
+            </span>
+            <span id="timeBadge"
+                  class="text-xs bg-slate-700 text-slate-300 border border-slate-600 px-2.5 py-1 rounded-md">
+              — ms
+            </span>
+          </div>
+
+          <!-- Copy button -->
+          <button
+            id="copyBtn"
+            class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
+            onclick="copyToClipboard(document.getElementById('outputText').value)"
+          >
+            Copy to Clipboard
+          </button>
+        </div>
+      </div>
+
+      <!-- Error message (hidden by default) -->
+      <div id="errorMsg"
+           class="hidden bg-red-900/40 border border-red-700 text-red-300 text-sm rounded-lg px-4 py-3">
+      </div>
+
+      <!-- Upgrade prompt (hidden by default) -->
+      <div id="upgradeMsg"
+           class="hidden bg-amber-900/30 border border-amber-700 text-amber-300 text-sm rounded-lg px-4 py-3">
+        Monthly limit reached &mdash;
+        <a href="/pricing" class="underline font-semibold hover:text-amber-200">upgrade at /pricing</a>
+      </div>
+
+    </div>
+  </div><!-- /two-column grid -->
+
+  <!-- =====================================================================
+       SEE AN EXAMPLE — pre-generated output visible before first click
+       Shows 6 real Gherkin scenarios for the login user story so users
+       understand the output quality before they commit to generating.
+       ===================================================================== -->
+  <div id="exampleSection" class="mt-10">
+
+    <div class="flex items-center gap-3 mb-4">
+      <h2 class="text-lg font-semibold text-slate-100">See an Example</h2>
+      <span class="text-xs font-semibold bg-emerald-900/50 text-emerald-300 border border-emerald-700/50 px-2.5 py-0.5 rounded-full">
+        Pre-generated
+      </span>
+    </div>
+
+    <p class="text-sm text-slate-400 mb-4">
+      Here&rsquo;s what TestScribe produces for the login story pre-filled above.
+      This is hardcoded so you can see the output quality before you click Generate.
+    </p>
+
+    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+      <pre class="font-mono text-sm text-green-300 leading-relaxed overflow-x-auto whitespace-pre-wrap">Feature: User Login
+
+  Scenario: Successful login with valid credentials
+    Given the user is on the login page
+    When they enter a valid email "user@example.com" and correct password
+    Then they should be redirected to the dashboard
+    And the session should be authenticated
+
+  Scenario: Login fails with wrong password
+    Given the user is on the login page
+    When they enter a valid email "user@example.com" and an incorrect password
+    Then they should see the error "Invalid credentials"
+    And they should remain on the login page
+
+  Scenario: Login fails with unknown email address
+    Given the user is on the login page
+    When they enter an email that is not registered and any password
+    Then they should see the error "Invalid credentials"
+    And no information about whether the email exists should be revealed
+
+  Scenario: Account is locked after 5 consecutive failed login attempts
+    Given the user has failed to log in 4 times
+    When they enter incorrect credentials a fifth time
+    Then their account should be locked for 15 minutes
+    And they should see the message "Account locked. Try again in 15 minutes."
+
+  Scenario: Locked account cannot log in before the lockout period expires
+    Given the user&apos;s account is locked
+    When they attempt to log in with correct credentials
+    Then they should see the lockout message
+    And they should NOT be redirected to the dashboard
+
+  Scenario: Account unlocks automatically after the lockout period
+    Given the user&apos;s account was locked 15 minutes ago
+    When they attempt to log in with correct credentials
+    Then they should be redirected to the dashboard
+    And the failed-attempt counter should be reset to zero</pre>
+    </div>
+
+    <!-- CTA below example -->
+    <div class="mt-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+      <p class="text-slate-400 text-sm">
+        &uarr; AI generates this from your user story in about 3 seconds.
+      </p>
+      <button
+        id="tryYourOwnBtn"
+        class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+      >
+        Generate for your own user story &rarr;
+      </button>
+    </div>
+
+  </div><!-- /exampleSection -->
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    // --- Format pill toggle ---
+    var formatLabels      = document.querySelectorAll('#formatSelector label');
+    var formatBadge       = document.getElementById('formatBadge');
+    var formatHelperText  = document.getElementById('formatHelperText');
+
+    var formatNames = { gherkin: 'Gherkin BDD', tabular: 'Tabular', pytest: 'Pytest' };
+    var formatHelpers = {
+      gherkin: 'Given/When/Then scenarios — paste into Cucumber, Behave, or SpecFlow',
+      tabular: 'Rows of ID / description / steps / expected result — paste into Jira or a test plan doc',
+      pytest:  'Python test functions with assertions — paste directly into a pytest file'
+    };
+
+    formatLabels.forEach(function (label) {
+      label.addEventListener('click', function () {
+        var radio = label.querySelector('input[type=radio]');
+        formatLabels.forEach(function (l) {
+          var sp = l.querySelector('span[data-pill]');
+          sp.className = 'px-4 py-2 rounded-full text-sm font-medium transition-colors select-none pill-inactive';
+        });
+        var span = label.querySelector('span[data-pill]');
+        span.className = 'px-4 py-2 rounded-full text-sm font-medium transition-colors select-none pill-active';
+        formatBadge.textContent = formatNames[radio.value] || radio.value;
+        if (formatHelperText) {
+          formatHelperText.textContent = formatHelpers[radio.value] || '';
+        }
+      });
+    });
+
+    // --- "Generate for your own user story" CTA (in example section) ---
+    var tryYourOwnBtn = document.getElementById('tryYourOwnBtn');
+    if (tryYourOwnBtn) {
+      tryYourOwnBtn.addEventListener('click', function () {
+        var inputEl = document.getElementById('inputText');
+        if (inputEl) {
+          inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          inputEl.focus();
+          inputEl.select();
+        }
+      });
+    }
+
+    // --- Generate ---
+    var generateBtn     = document.getElementById('generateBtn');
+    var generateBtnText = document.getElementById('generateBtnText');
+    var generateSpinner = document.getElementById('generateSpinner');
+    var emptyState      = document.getElementById('emptyState');
+    var resultArea      = document.getElementById('resultArea');
+    var outputText      = document.getElementById('outputText');
+    var errorMsg        = document.getElementById('errorMsg');
+    var upgradeMsg      = document.getElementById('upgradeMsg');
+    var tokensBadge     = document.getElementById('tokensBadge');
+    var timeBadge       = document.getElementById('timeBadge');
+    var exampleSection  = document.getElementById('exampleSection');
+
+    function setLoading(loading) {
+      generateBtn.disabled = loading;
+      if (loading) {
+        generateBtnText.textContent = 'Generating…';
+        generateSpinner.classList.remove('hidden');
+      } else {
+        generateBtnText.textContent = 'Generate Test Cases';
+        generateSpinner.classList.add('hidden');
+      }
+    }
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.remove('hidden');
+    }
+
+    function hideError() {
+      errorMsg.classList.add('hidden');
+      upgradeMsg.classList.add('hidden');
+    }
+
+    function showResult(text, tokens, elapsedMs) {
+      // Hide example section once user has a real result
+      if (exampleSection) {
+        exampleSection.classList.add('hidden');
+      }
+      emptyState.classList.add('hidden');
+      resultArea.classList.remove('hidden');
+      outputText.value = text;
+      tokensBadge.textContent = (tokens != null ? tokens : '—') + ' tokens';
+      timeBadge.textContent   = (elapsedMs != null ? elapsedMs : '—') + ' ms';
+      // Scroll result into view on mobile
+      resultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function pollGeneration(id, attempt, startTs) {
+      if (attempt > 30) {
+        setLoading(false);
+        showError('Generation timed out. Please try again.');
+        return;
+      }
+      var token = localStorage.getItem('ts_access_token');
+      var headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+
+      fetch('/generations/' + id, { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === 'completed') {
+            setLoading(false);
+            var elapsed = Date.now() - startTs;
+            showResult(data.output_text || '', data.tokens_used, elapsed);
+          } else if (data.status === 'failed') {
+            setLoading(false);
+            showError(data.error_message || 'Generation failed. Please try again.');
+          } else {
+            // still pending
+            setTimeout(function () { pollGeneration(id, attempt + 1, startTs); }, 2000);
+          }
+        })
+        .catch(function () {
+          setLoading(false);
+          showError('Network error while checking generation status.');
+        });
+    }
+
+    generateBtn.addEventListener('click', function () {
+      hideError();
+
+      var inputText = document.getElementById('inputText').value.trim();
+      if (!inputText) {
+        showError('Please enter a user story or spec before generating.');
+        return;
+      }
+
+      var outputFormat = document.querySelector('input[name="outputFormat"]:checked').value;
+      var inputType    = document.getElementById('inputType').value;
+
+      var token   = localStorage.getItem('ts_access_token');
+      var headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+
+      setLoading(true);
+      var startTs = Date.now();
+
+      fetch('/generations', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          input_type:    inputType,
+          input_text:    inputText,
+          output_format: outputFormat
+        })
+      })
+      .then(function (response) {
+        if (response.status === 402) {
+          setLoading(false);
+          upgradeMsg.innerHTML = 'You’ve used all 25 free generations this month. ' +
+            '<a href="/pricing" class="underline font-semibold hover:text-amber-200">Upgrade to Solo →</a>' +
+            ' to continue, or wait until your limit resets.';
+          upgradeMsg.classList.remove('hidden');
+          return null;
+        }
+        if (response.status === 401) {
+          window.location.href = '/auth/login';
+          return null;
+        }
+        if (!response.ok) {
+          return response.json().then(function (err) {
+            var status = response.status;
+            var msg;
+            if (status === 429) {
+              msg = 'Slow down — you’re generating too fast. Wait a few seconds and try again.';
+            } else if (status >= 500) {
+              msg = 'Something went wrong on our end. This isn’t your fault — please try again in a moment.';
+            } else {
+              msg = err.detail || err.message || 'Generation failed (' + status + ')';
+            }
+            throw new Error(msg);
+          });
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        if (!data) return;
+        if (data.status === 'completed') {
+          setLoading(false);
+          var elapsed = Date.now() - startTs;
+          showResult(data.output_text || '', data.tokens_used, elapsed);
+        } else if (data.status === 'pending' || data.status === 'processing') {
+          // async: poll
+          pollGeneration(data.id, 1, startTs);
+        } else if (data.output_text) {
+          setLoading(false);
+          var elapsed = Date.now() - startTs;
+          showResult(data.output_text, data.tokens_used, elapsed);
+        } else {
+          setLoading(false);
+          showError('Unexpected response from server.');
+        }
+      })
+      .catch(function (err) {
+        setLoading(false);
+        showError(err.message || 'An error occurred. Please try again.');
+      });
+    });
+
+  })();
+</script>
+{% endblock %}

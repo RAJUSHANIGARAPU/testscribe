@@ -1,0 +1,23 @@
+[run]
+source = app
+omit =
+    # Async rewrite modules not yet wired into the running app (app/main.py uses sync SQLAlchemy)
+    app/auth.py
+    app/billing.py
+    app/limits.py
+    app/dependencies.py
+    app/tasks.py
+    app/middleware.py
+
+[report]
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+    # Debug-only code
+    def __repr__
+    # Abstract methods
+    raise NotImplementedError
+    # Type-checking blocks
+    if TYPE_CHECKING:
+    # Unreachable defensive code
+    raise AssertionError
