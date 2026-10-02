@@ -17,6 +17,7 @@ Import chain (no circularity):
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta, timezone
@@ -26,9 +27,9 @@ from loguru import logger
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import ClaudeClient, get_claude_client
+from app.ai import get_claude_client
 from app.config import settings
-from app.database import get_async_db as get_db
+from app.database import get_async_session_factory
 from app.exceptions import GenerationError
 from app.limits import record_usage
 from app.models import (
@@ -47,6 +48,17 @@ from app.schemas import TaskQueueResponse
 # ---------------------------------------------------------------------------
 
 TaskHandler = Callable[[dict[str, Any], AsyncSession], Coroutine[Any, Any, dict[str, Any]]]
+
+
+def _session() -> AsyncSession:
+    """
+    Open a new async session for one unit of worker work.
+
+    Used as ``async with _session() as db`` so the session is closed even when
+    the worker coroutine is cancelled mid-query (an ``async for`` over the
+    ``get_async_db`` generator leaves it open in that case).
+    """
+    return get_async_session_factory()()
 
 
 # ---------------------------------------------------------------------------
@@ -126,12 +138,10 @@ async def enqueue_task(
     Returns:
         ``TaskQueueResponse`` for the newly created task.
     """
-    import json as _json
-
     kwargs: dict[str, Any] = {
         "task_type": task_type,
         # payload must be stored as a JSON string — TaskQueue.payload is Text
-        "payload": _json.dumps(payload),
+        "payload": json.dumps(payload),
         "priority": priority,
         "status": TaskStatus.PENDING,
         "attempt_count": 0,
@@ -153,8 +163,10 @@ async def get_next_task(db: AsyncSession) -> TaskQueue | None:
     """
     Claim and return the next PENDING task eligible for execution.
 
-    Uses ``SELECT … FOR UPDATE SKIP LOCKED`` to prevent multiple workers
-    from claiming the same task concurrently.
+    The candidate is selected with ``FOR UPDATE SKIP LOCKED`` (PostgreSQL)
+    and then claimed with a conditional ``UPDATE … WHERE status = 'pending'``.
+    SQLite ignores row locks, so the conditional update is what stops two
+    worker processes (the Docker image runs two) from running the same task.
 
     Args:
         db: Active database session.
@@ -168,7 +180,7 @@ async def get_next_task(db: AsyncSession) -> TaskQueue | None:
     # Use WITH FOR UPDATE SKIP LOCKED for concurrent-safe claiming
     # run_after is the DB column; scheduled_at is a Python property alias.
     result = await db.execute(
-        select(TaskQueue)
+        select(TaskQueue.id)
         .where(
             TaskQueue.status == TaskStatus.PENDING,
             TaskQueue.run_after <= now,
@@ -177,16 +189,24 @@ async def get_next_task(db: AsyncSession) -> TaskQueue | None:
         .limit(1)
         .with_for_update(skip_locked=True)
     )
-    task = result.scalar_one_or_none()
-    if task is None:
+    task_id = result.scalar_one_or_none()
+    if task_id is None:
         return None
 
-    task.status = TaskStatus.RUNNING
-    task.started_at = now
-    task.attempt_count += 1
+    claimed = await db.execute(
+        update(TaskQueue)
+        .where(TaskQueue.id == task_id, TaskQueue.status == TaskStatus.PENDING.value)
+        .values(
+            status=TaskStatus.RUNNING.value,
+            started_at=now,
+            attempt_count=TaskQueue.attempt_count + 1,
+        )
+    )
     await db.commit()
-    await db.refresh(task)
-    return task
+    if claimed.rowcount != 1:
+        # Another worker claimed it between the SELECT and the UPDATE.
+        return None
+    return await db.get(TaskQueue, task_id)
 
 
 async def complete_task(
@@ -202,11 +222,10 @@ async def complete_task(
         result: Return value from the handler, stored as JSON.
         db: Active database session.
     """
-    import json as _json
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.now(timezone.utc)
     # result column is Text — serialize dict to JSON string
-    task.result = _json.dumps(result) if isinstance(result, dict) else str(result)
+    task.result = json.dumps(result) if isinstance(result, dict) else str(result)
     task.error_message = None
     await db.commit()
 
@@ -230,6 +249,8 @@ async def fail_task(
     if task.attempt_count >= task.max_attempts:
         task.status = TaskStatus.DEAD
         task.completed_at = datetime.now(timezone.utc)
+        if task.task_type == GENERATE_TESTS_TASK:
+            await _mark_generation_failed(task, error, db)
         logger.warning(
             "Task {id} ({type}) permanently failed after {n} attempts",
             id=task.id,
@@ -253,12 +274,39 @@ async def fail_task(
     await db.commit()
 
 
+async def _mark_generation_failed(
+    task: TaskQueue,
+    error: Exception,
+    db: AsyncSession,
+) -> None:
+    """
+    Mark the ``Generation`` behind a dead generate_tests task as FAILED.
+
+    Without this a generation whose task ran out of attempts (or was reaped)
+    stays ``pending``/``processing`` forever and clients poll it indefinitely.
+    """
+    try:
+        generation_id = json.loads(task.payload or "{}").get("generation_id")
+    except (ValueError, AttributeError):
+        return
+    if not generation_id:
+        return
+    gen = await db.get(Generation, str(generation_id))
+    if gen is None or gen.status == GenerationStatus.COMPLETED:
+        return
+    gen.status = GenerationStatus.FAILED
+    gen.error_message = str(error)
+    gen.completed_at = datetime.now(timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # Concrete task handlers
 # ---------------------------------------------------------------------------
 
+GENERATE_TESTS_TASK = "app.tasks.generate_tests"
 
-@register_task("app.tasks.generate_tests")
+
+@register_task(GENERATE_TESTS_TASK)
 async def handle_generate_tests(
     payload: dict[str, Any],
     db: AsyncSession,
@@ -289,6 +337,11 @@ async def handle_generate_tests(
     if gen is None:
         raise GenerationError(message=f"Generation {generation_id} not found")
 
+    # A retry after a partial success (e.g. usage recording failed) must not
+    # call the model again or count usage twice.
+    if gen.status == GenerationStatus.COMPLETED:
+        return {"generation_id": str(generation_id), "status": "completed"}
+
     # Fetch the User record for the plan (avoids lazy-load in async context)
     user_result = await db.execute(select(User).where(User.id == str(user_id)))
     requesting_user = user_result.scalar_one_or_none()
@@ -301,8 +354,7 @@ async def handle_generate_tests(
     try:
         # Call Claude using the Generation record's actual fields
         client = get_claude_client()
-        import asyncio as _asyncio
-        generation_result = await _asyncio.to_thread(
+        generation_result = await asyncio.to_thread(
             client.generate,
             input_type=gen.input_type,
             input_text=gen.input_text,
@@ -318,25 +370,26 @@ async def handle_generate_tests(
         gen.total_tokens = generation_result.total_tokens
         gen.latency_ms = generation_result.latency_ms
         gen.model = generation_result.model
-        from datetime import datetime, timezone as _tz
-        gen.completed_at = datetime.now(_tz.utc)
+        gen.completed_at = datetime.now(timezone.utc)
         await db.commit()
-
-        # Record usage (reuse already-fetched user)
-        if requesting_user is not None:
-            await record_usage(
-                user=requesting_user,
-                generation_id=generation_id,
-                prompt_tokens=generation_result.prompt_tokens,
-                completion_tokens=generation_result.completion_tokens,
-                db=db,
-            )
-
     except Exception as exc:
-        gen.status = GenerationStatus.FAILED
+        # The task may still be retried, so the generation goes back to
+        # pending rather than failed; fail_task() marks it failed once the
+        # task runs out of attempts.
+        gen.status = GenerationStatus.PENDING
         gen.error_message = str(exc)
         await db.commit()
         raise GenerationError(message=str(exc)) from exc
+
+    # Record usage (reuse already-fetched user)
+    if requesting_user is not None:
+        await record_usage(
+            user=requesting_user,
+            generation_id=generation_id,
+            prompt_tokens=generation_result.prompt_tokens,
+            completion_tokens=generation_result.completion_tokens,
+            db=db,
+        )
 
     return {"generation_id": str(generation_id), "status": "completed"}
 
@@ -387,7 +440,6 @@ async def handle_sync_stripe_subscription(
     import asyncio
     import stripe as _stripe
     from app.billing import BillingService, price_id_to_plan
-    from app.models import Subscription
 
     stripe_sub_id: str = payload["stripe_subscription_id"]
     user_id = uuid.UUID(payload["user_id"])
@@ -484,12 +536,12 @@ class BackgroundWorker:
         """
         while self.running:
             try:
-                async for db in get_db():
+                async with _session() as db:
                     task = await get_next_task(db)
-                    if task is None:
-                        await asyncio.sleep(settings.task_poll_interval)
-                        break
-                    await self._execute_task(task, db)
+                    if task is not None:
+                        await self._execute_task(task, db)
+                if task is None:
+                    await asyncio.sleep(settings.task_poll_interval)
             except Exception as exc:
                 logger.exception("Worker loop error: {}", exc)
                 await asyncio.sleep(settings.task_poll_interval)
@@ -509,12 +561,11 @@ class BackgroundWorker:
             return
 
         try:
-            import json as _json
             if isinstance(task.payload, dict):
                 payload = task.payload
             elif task.payload:
                 try:
-                    payload = _json.loads(task.payload)
+                    payload = json.loads(task.payload)
                 except Exception:
                     payload = {}
             else:
@@ -579,7 +630,7 @@ class DLQWorker:
             Number of entries successfully re-queued in this batch.
         """
         re_queued = 0
-        async for db in get_db():
+        async with _session() as db:
             result = await db.execute(
                 select(WebhookDLQ)
                 .where(
@@ -663,7 +714,7 @@ class TaskReaper:
         """
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.stale_threshold_seconds)
         reaped = 0
-        async for db in get_db():
+        async with _session() as db:
             result = await db.execute(
                 select(TaskQueue).where(
                     TaskQueue.status == TaskStatus.RUNNING,
@@ -694,19 +745,22 @@ _task_reaper: TaskReaper | None = None
 
 async def start_all_workers() -> None:
     """
-    Initialise and start all background worker singletons.
+    Initialise and start the background worker and the stale-task reaper.
 
     Called once from the FastAPI lifespan ``startup`` phase.
+
+    ``DLQWorker`` is deliberately not started: it enqueues
+    ``app.tasks.process_webhook_dlq`` tasks, which have no registered
+    handler, and the webhook route in ``main.py`` never writes to
+    ``webhook_dlq``. Starting it would only produce dead tasks.
     """
-    global _background_worker, _dlq_worker, _task_reaper
+    global _background_worker, _task_reaper
     _background_worker = BackgroundWorker()
-    _dlq_worker = DLQWorker()
     _task_reaper = TaskReaper(
         interval_seconds=int(settings.task_reaper_interval),
         stale_threshold_seconds=300,
     )
     await _background_worker.start()
-    await _dlq_worker.start()
     await _task_reaper.start()
     logger.info("All background workers started")
 
@@ -717,12 +771,14 @@ async def stop_all_workers() -> None:
 
     Called once from the FastAPI lifespan ``shutdown`` phase.
     """
+    global _background_worker, _dlq_worker, _task_reaper
     if _background_worker is not None:
         await _background_worker.stop()
     if _dlq_worker is not None:
         await _dlq_worker.stop()
     if _task_reaper is not None:
         await _task_reaper.stop()
+    _background_worker = _dlq_worker = _task_reaper = None
     logger.info("All background workers stopped")
 
 

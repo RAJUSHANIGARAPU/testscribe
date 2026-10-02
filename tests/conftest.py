@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
-from datetime import datetime, timezone
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import bcrypt
@@ -139,7 +137,8 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     data in the single in-memory database.
 
     ``dispose_db`` is patched out so the lifespan shutdown does not destroy
-    the test engine while the test is still running.
+    the test engine while the test is still running, and the background
+    workers are not started.
 
     Yields:
         TestClient wrapping the fully configured FastAPI app.
@@ -160,8 +159,13 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     application = create_app()
     application.dependency_overrides[get_db] = _override_db
 
-    # Prevent the app's lifespan shutdown from disposing our test engine
-    with patch("app.main.dispose_db"):
+    # Prevent the app's lifespan shutdown from disposing our test engine, and
+    # keep the background workers off: they use the async engine, which is not
+    # pointed at the per-test database. Worker behaviour is tested directly in
+    # tests/test_tasks.py.
+    with patch("app.main.dispose_db"), \
+         patch("app.main.start_all_workers"), \
+         patch("app.main.stop_all_workers"):
         with TestClient(application, raise_server_exceptions=False) as test_client:
             yield test_client
 

@@ -17,15 +17,13 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 
-from loguru import logger
-from sqlalchemy import func, select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.exceptions import UsageLimitExceededError
-from app.models import Generation, Subscription, SubscriptionPlan, UsageDaily, User
+from app.models import Subscription, SubscriptionPlan, UsageDaily, User
 from app.schemas import UsageDailyResponse, UsageSummaryResponse
 
 
@@ -158,7 +156,6 @@ async def record_usage(
     today_dt = datetime(today.year, today.month, today.day)  # naive, matches DB column
 
     # Determine if we can use the PostgreSQL dialect upsert
-    bind = db.get_bind() if hasattr(db, "get_bind") else None
     dialect_name = ""
     try:
         engine = db.bind  # type: ignore[attr-defined]

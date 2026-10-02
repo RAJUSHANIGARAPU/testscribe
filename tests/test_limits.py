@@ -12,7 +12,7 @@ and is not wired into the sync app/main.py. Tests here test the sync layer.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -244,7 +244,7 @@ class TestCheckUsageGate:
         self, db_session: Session, registered_user
     ) -> None:
         """A user upgraded to 'pro' can make more than 5 generations per day."""
-        from app.main import _check_usage_gate, PLAN_DAILY_LIMITS
+        from app.main import _check_usage_gate
         from app.models import UsageDaily
 
         registered_user.plan = "pro"

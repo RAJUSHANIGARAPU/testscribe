@@ -14,7 +14,6 @@ import pytest
 
 from app.ai import (
     CircuitBreaker,
-    CircuitState,
     ClaudeClient,
     GenerationResult,
     InputPreprocessor,

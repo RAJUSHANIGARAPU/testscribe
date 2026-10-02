@@ -34,10 +34,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Lint is advisory: the repo has pre-existing ruff findings, so this
-      # step reports them without failing the build. Tests are the hard gate.
       - name: Lint (ruff)
-        continue-on-error: true
         run: ruff check app/ tests/
 
       # Test config lives in pytest.ini (coverage, --cov-fail-under=80,
