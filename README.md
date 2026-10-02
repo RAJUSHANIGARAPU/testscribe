@@ -6,8 +6,8 @@ TestScribe is a FastAPI service that turns user stories, requirements text and O
 
 - **Self-hosted only.** There is no hosted version running: no public domain is live and no Fly.io app is deployed. Run it locally or on your own infrastructure.
 - **The JSON API works.** The test suite passes and the server starts from `.env.example`; `/health`, registration, login and the generation endpoints respond.
-- **Long inputs never complete.** Inputs of 3,000 characters or more are queued for a background worker (`202 Accepted`), but the app never starts that worker, so they stay `pending`. Shorter inputs are processed within the request and work.
-- **The HTML pages are broken.** `/`, `/demo`, `/dashboard`, `/pricing` and `/docs-page` return HTTP 500, because the templates call Flask-only helpers (`get_flashed_messages`, `csrf_token`) that Jinja under FastAPI does not provide. Use the API directly.
+- **Long inputs are processed in the background.** Inputs of 3,000 characters or more return `202 Accepted` with a `pending` generation; a worker started with the app processes it, so poll `GET /generations/{id}` until it is `completed` or `failed`. A failed attempt is retried up to three times with backoff before the generation is marked `failed`.
+- **The HTML pages are static shells.** `/`, `/demo`, `/dashboard`, `/pricing` and `/docs-page` render, but there is no HTML login: `/demo` and `/dashboard` call the JSON API with an access token stored as `ts_access_token` in the browser's localStorage. Links to checkout and login point at JSON endpoints.
 - **Billing code is present but not in use.** The code has Stripe checkout, webhooks and per-plan monthly limits (the `free` plan allows 25 generations a month). The Stripe settings are required for the app to start, but placeholder values are enough as long as you don't call the billing endpoints.
 
 ## What it does
@@ -15,7 +15,7 @@ TestScribe is a FastAPI service that turns user stories, requirements text and O
 - Accepts five input types: `user_story`, `requirement`, `openapi`, `jira_text`, `raw`
 - Produces three output formats: `gherkin`, `tabular`, `pytest`
 - Prompts the model to cover happy paths, boundary values, negative cases and common security cases
-- Processes inputs under 3,000 characters within the request; longer inputs go to a background queue (not working, see Status)
+- Processes inputs under 3,000 characters within the request; longer inputs go to a background queue
 - Stores generation history with status, latency and token counts
 - Authenticates with JWT access/refresh tokens or long-lived API keys (bcrypt-hashed, `tsc_` prefix)
 - Retries model calls and wraps them in a circuit breaker; applies per-IP and per-user rate limits
@@ -48,7 +48,7 @@ Database tables are created automatically on startup (SQLite file `./testscribe.
 make test         # or just: pytest
 ```
 
-The tests use in-memory SQLite and mock the Anthropic and Stripe clients, so they need no network access or keys. `pytest.ini` enforces at least 80% coverage. `make lint` runs ruff; it currently reports existing findings, so CI treats lint as advisory.
+The tests use in-memory SQLite and mock the Anthropic and Stripe clients, so they need no network access or keys. `pytest.ini` enforces at least 80% coverage. `make lint` runs ruff; CI fails on any finding.
 
 ### Docker
 
@@ -142,14 +142,14 @@ All settings are read from environment variables or `.env`. See `.env.example` f
 
 ## Architecture
 
-A single-process FastAPI application on SQLAlchemy. `POST /generations` validates the request, checks the user's monthly limit and stores a `pending` record. For inputs under 3,000 characters it then calls the Anthropic API in the same request (with `tenacity` retries and a circuit breaker) and stores the output, token counts and latency. Longer inputs are written to a `TaskQueue` table for a worker in `app/tasks.py`; that worker and its stale-task reaper exist in the code but are not started at app startup (`start_all_workers()` is never called). Data lives in one SQLite file by default; the schema also works on PostgreSQL by changing `DATABASE_URL`.
+A FastAPI application on SQLAlchemy. `POST /generations` validates the request, checks the user's monthly limit and stores a `pending` record. For inputs under 3,000 characters it then calls the Anthropic API in the same request (with `tenacity` retries and a circuit breaker) and stores the output, token counts and latency. Longer inputs are written to a `TaskQueue` table. The app lifespan starts a worker from `app/tasks.py` that claims queued tasks (a conditional update, so the two uvicorn processes in the Docker image never run the same task) and a reaper that fails or re-queues tasks stuck in `running`. Data lives in one SQLite file by default; the schema also works on PostgreSQL by changing `DATABASE_URL`.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | `app/` | Application code: `main.py` (routes), `ai.py` (prompting and model client), `tasks.py` (background worker), `limits.py` (plan limits), `billing.py` (Stripe) |
-| `app/templates/` | HTML pages; currently broken, see Status |
+| `app/templates/` | HTML pages (Jinja), see Status |
 | `tests/` | pytest suite |
 | `fly.toml` | Fly.io config; no Fly app is deployed from it and CI does not deploy |
 | `COPY.md`, `SEO.md`, `ONBOARDING.md` | Marketing and email drafts for a hosted version that was never launched; the URLs and prices in them are not live |

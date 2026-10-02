@@ -1,6 +1,8 @@
 """Claude AI client with circuit breaker, retry, prompt caching, and output parsing."""
 from __future__ import annotations
-import json, re, time
+import json
+import re
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional

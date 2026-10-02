@@ -14,7 +14,7 @@ from collections.abc import AsyncGenerator
 from typing import Generator
 
 from loguru import logger
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 

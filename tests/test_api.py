@@ -8,12 +8,9 @@ External services (Anthropic, Stripe) are mocked via conftest fixtures.
 
 from __future__ import annotations
 
-import hashlib
-import secrets
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -381,7 +378,6 @@ def test_generate_free_tier_daily_limit(
 ) -> None:
     """POST /generations returns 429 once the free user has used their daily quota."""
     from app.models import UsageDaily
-    from datetime import date
 
     # Directly insert a usage_daily row that exhausts the free daily limit (5)
     today = datetime.now(timezone.utc).date()

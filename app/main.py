@@ -14,6 +14,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated, Any, Optional
 
 import bcrypt
@@ -29,9 +30,8 @@ from fastapi import (
     Security,
     status,
 )
-from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -88,10 +88,11 @@ from app.schemas import (
     UsageResponse,
     UserResponse,
 )
+from app.tasks import start_all_workers, stop_all_workers
 
 # ─── Templates ────────────────────────────────────────────────────────────
 
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 # ─── Bearer scheme ────────────────────────────────────────────────────────
 
@@ -488,12 +489,17 @@ async def lifespan(app: FastAPI):
 
     init_db()
     app.state.start_time = time.time()
+
+    # Long inputs (POST /generations, >= 3,000 chars) are queued in
+    # task_queue; the worker drains it and the reaper recovers stuck tasks.
+    await start_all_workers()
     logger.info("TestScribe ready")
 
     yield
 
     # Shutdown
     logger.info("TestScribe shutting down")
+    await stop_all_workers()
     dispose_db()
     logger.info("TestScribe shutdown complete")
 
@@ -549,23 +555,23 @@ def _register_routes(app: FastAPI) -> None:  # noqa: C901
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def index(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse(request, "index.html")
 
     @app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
     async def demo(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("demo.html", {"request": request})
+        return templates.TemplateResponse(request, "demo.html")
 
     @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
     async def dashboard_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("dashboard.html", {"request": request})
+        return templates.TemplateResponse(request, "dashboard.html")
 
     @app.get("/pricing", response_class=HTMLResponse, include_in_schema=False)
     async def pricing(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("pricing.html", {"request": request})
+        return templates.TemplateResponse(request, "pricing.html")
 
     @app.get("/docs-page", response_class=HTMLResponse, include_in_schema=False)
     async def docs_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("docs.html", {"request": request})
+        return templates.TemplateResponse(request, "docs.html")
 
     # ── Health ────────────────────────────────────────────────────────────
 

@@ -7,108 +7,88 @@
 {% endblock %}
 
 {% block content %}
+{#
+  The API authenticates with a bearer token, which a plain page load does not
+  carry. The page is therefore served as a static shell and fills itself in
+  from the JSON API using the token stored in localStorage (same as /demo).
+#}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
 
-  <!-- Page header -->
-  <div class="flex items-center justify-between flex-wrap gap-4">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-100">
-        Welcome back, {{ user.full_name or user.email }}
-      </h1>
-      <p class="text-slate-400 text-sm mt-1">Here&rsquo;s your usage summary and recent activity.</p>
-    </div>
-    <div class="flex items-center gap-3">
-      <!-- Plan badge -->
-      <span class="text-xs font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full border
-        {% if subscription and subscription.plan == 'pro' %}
-          bg-indigo-900/40 border-indigo-600 text-indigo-300
-        {% elif subscription and subscription.plan == 'solo' %}
-          bg-purple-900/40 border-purple-600 text-purple-300
-        {% else %}
-          bg-slate-700 border-slate-600 text-slate-300
-        {% endif %}">
-        {{ (subscription.plan | capitalize) if subscription else 'Free' }} Plan
-      </span>
-      <a href="/demo"
-         class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-        + New Generation
-      </a>
-    </div>
+  <!-- Shown when there is no stored token or the token is rejected -->
+  <div id="signedOut" class="hidden bg-slate-800/50 border border-slate-700 rounded-xl p-10 text-center">
+    <h1 class="text-2xl font-bold text-slate-100">Sign in to see your dashboard</h1>
+    <p class="text-slate-400 text-sm mt-2">
+      Log in through <code class="font-mono">POST /auth/login</code> and store the access token as
+      <code class="font-mono">ts_access_token</code> in this browser&rsquo;s localStorage.
+    </p>
+    <a href="/docs-page" class="mt-4 inline-block text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors">
+      Read the API docs &rarr;
+    </a>
   </div>
 
-  <!-- Usage card -->
-  <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-base font-semibold text-slate-100">This Month&rsquo;s Usage</h2>
-      {% if subscription and subscription.plan == 'free' %}
-        <a href="/pricing" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
-          Upgrade to Solo for 200/month &rarr;
+  <p id="loadError" class="hidden text-sm text-red-400"></p>
+
+  <div id="dashboard" class="hidden space-y-8">
+
+    <!-- Page header -->
+    <div class="flex items-center justify-between flex-wrap gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-100">
+          Welcome back, <span id="userName"></span>
+        </h1>
+        <p class="text-slate-400 text-sm mt-1">Here&rsquo;s your usage summary and recent activity.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="planBadge"
+              class="text-xs font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full border bg-slate-700 border-slate-600 text-slate-300"></span>
+        <a href="/demo"
+           class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+          + New Generation
         </a>
-      {% endif %}
-    </div>
-
-    <div class="flex items-end gap-3 mb-3">
-      <span class="text-4xl font-extrabold text-slate-100">
-        {{ usage.current_month.count }}
-      </span>
-      <span class="text-slate-400 text-lg mb-1">/</span>
-      <span class="text-xl font-semibold text-slate-400 mb-1">
-        {{ usage.current_month.limit if usage.current_month.limit else '&#x221E;' }}
-      </span>
-      <span class="text-slate-500 text-sm mb-1">generations this month</span>
-    </div>
-
-    {% if usage.current_month.limit %}
-      {% set pct = (usage.current_month.count / usage.current_month.limit * 100) | round(1) %}
-      <div class="w-full bg-slate-700 rounded-full h-2">
-        <div class="h-2 rounded-full transition-all
-          {% if pct >= 90 %}bg-red-500{% elif pct >= 70 %}bg-amber-500{% else %}bg-indigo-500{% endif %}"
-             style="width: {{ [pct, 100] | min }}%">
-        </div>
       </div>
-      <p class="text-xs text-slate-500 mt-2">{{ (usage.current_month.limit - usage.current_month.count) | max(0) }} remaining this month</p>
-    {% else %}
-      <div class="w-full bg-slate-700 rounded-full h-2">
-        <div class="h-2 rounded-full bg-indigo-500" style="width: 30%"></div>
+    </div>
+
+    <!-- Usage card -->
+    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-semibold text-slate-100">Today&rsquo;s Usage</h2>
+        <a id="upgradeLink" href="/pricing"
+           class="hidden text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
+          Upgrade for a higher limit &rarr;
+        </a>
       </div>
-      <p class="text-xs text-slate-500 mt-2">Unlimited plan</p>
-    {% endif %}
-  </div>
-
-  <!-- Stats row -->
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-
-    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-      <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Generations This Month</p>
-      <p class="text-3xl font-extrabold text-slate-100">{{ usage.current_month.count }}</p>
+      <div class="flex items-end gap-3 mb-3">
+        <span id="usedToday" class="text-4xl font-extrabold text-slate-100">0</span>
+        <span class="text-slate-400 text-lg mb-1">/</span>
+        <span id="dailyLimit" class="text-xl font-semibold text-slate-400 mb-1">0</span>
+        <span class="text-slate-500 text-sm mb-1">generations today</span>
+      </div>
+      <div class="w-full bg-slate-700 rounded-full h-2">
+        <div id="usageBar" class="h-2 rounded-full transition-all bg-indigo-500" style="width: 0%"></div>
+      </div>
+      <p id="remainingToday" class="text-xs text-slate-500 mt-2"></p>
     </div>
 
-    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-      <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Tokens Used</p>
-      <p class="text-3xl font-extrabold text-slate-100">
-        {% if usage.current_month.tokens_used %}
-          {{ "{:,}".format(usage.current_month.tokens_used) }}
-        {% else %}
-          0
-        {% endif %}
-      </p>
+    <!-- Stats row -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Generations This Month</p>
+        <p id="monthGenerations" class="text-3xl font-extrabold text-slate-100">0</p>
+      </div>
+      <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Tokens This Month</p>
+        <p id="monthTokens" class="text-3xl font-extrabold text-slate-100">0</p>
+      </div>
+      <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Current Plan</p>
+        <p id="currentPlan" class="text-3xl font-extrabold text-slate-100"></p>
+      </div>
     </div>
 
-    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-      <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Current Plan</p>
-      <p class="text-3xl font-extrabold text-slate-100">
-        {{ (subscription.plan | capitalize) if subscription else 'Free' }}
-      </p>
-    </div>
-
-  </div>
-
-  <!-- Recent generations table -->
-  <div>
-    <h2 class="text-lg font-semibold text-slate-100 mb-4">Recent Generations</h2>
-
-    {% if recent_generations %}
-      <div class="overflow-x-auto rounded-xl border border-slate-700">
+    <!-- Recent generations table -->
+    <div>
+      <h2 class="text-lg font-semibold text-slate-100 mb-4">Recent Generations</h2>
+      <div id="generationsTable" class="hidden overflow-x-auto rounded-xl border border-slate-700">
         <table class="min-w-full text-sm">
           <thead class="bg-slate-800">
             <tr>
@@ -117,125 +97,195 @@
               <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Format</th>
               <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Tokens</th>
-              <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-700/50 bg-slate-800/20">
-            {% for gen in recent_generations %}
-            <tr class="hover:bg-slate-700/20 transition-colors">
-              <td class="px-4 py-3 text-slate-300 text-xs">
-                {{ gen.created_at.strftime('%b %d, %Y') if gen.created_at else '—' }}
-              </td>
-              <td class="px-4 py-3 text-slate-300 capitalize">
-                {{ (gen.input_type or '—') | replace('_', ' ') }}
-              </td>
-              <td class="px-4 py-3 text-slate-300 capitalize">
-                {{ gen.output_format or '—' }}
-              </td>
-              <td class="px-4 py-3">
-                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
-                  {% if gen.status == 'completed' %}bg-green-900/50 text-green-400 border border-green-700/50
-                  {% elif gen.status == 'failed' %}bg-red-900/50 text-red-400 border border-red-700/50
-                  {% elif gen.status == 'processing' %}bg-yellow-900/50 text-yellow-400 border border-yellow-700/50
-                  {% else %}bg-slate-700 text-slate-400 border border-slate-600{% endif %}">
-                  {{ gen.status or 'unknown' }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-slate-400 text-xs">
-                {{ "{:,}".format(gen.tokens_used) if gen.tokens_used else '—' }}
-              </td>
-              <td class="px-4 py-3 text-right">
-                <a href="/generations/{{ gen.id }}"
-                   class="text-indigo-400 hover:text-indigo-300 text-xs font-medium transition-colors">
-                  View
-                </a>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
+          <tbody id="generationsBody" class="divide-y divide-slate-700/50 bg-slate-800/20"></tbody>
         </table>
       </div>
-    {% else %}
-      <div class="bg-slate-800/30 border border-slate-700 rounded-xl p-10 text-center">
+      <div id="generationsEmpty" class="hidden bg-slate-800/30 border border-slate-700 rounded-xl p-10 text-center">
         <p class="text-slate-500 text-sm">No generations yet.</p>
         <a href="/demo" class="mt-3 inline-block text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors">
           Try your first generation &rarr;
         </a>
       </div>
-    {% endif %}
-  </div>
-
-  <!-- API Keys section -->
-  <div>
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-slate-100">API Keys</h2>
     </div>
 
-    {% if api_keys %}
-      <ul class="space-y-2 mb-4">
-        {% for key in api_keys %}
-        <li class="flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 gap-4">
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium text-slate-200 truncate">{{ key.name or 'Unnamed key' }}</p>
-            <div class="flex items-center gap-3 mt-1">
-              <span class="font-mono text-xs text-slate-500">{{ key.key_prefix }}••••••••</span>
-              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                {% if key.is_active %}bg-green-900/40 text-green-400{% else %}bg-slate-700 text-slate-400{% endif %}">
-                {{ 'Active' if key.is_active else 'Revoked' }}
-              </span>
-              {% if key.last_used_at %}
-                <span class="text-xs text-slate-500">Last used {{ key.last_used_at.strftime('%b %d') }}</span>
-              {% else %}
-                <span class="text-xs text-slate-600">Never used</span>
-              {% endif %}
-            </div>
-          </div>
-          {% if key.is_active %}
-          <form method="POST" action="/settings/api-keys/{{ key.id }}/revoke" class="shrink-0">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <button type="submit"
-                    class="text-xs text-red-400 hover:text-red-300 font-medium transition-colors"
-                    onclick="return confirm('Revoke this API key? This cannot be undone.')">
-              Revoke
-            </button>
-          </form>
-          {% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="text-sm text-slate-500 mb-4">No API keys yet.</p>
-    {% endif %}
+    <!-- API Keys section -->
+    <div>
+      <h2 class="text-lg font-semibold text-slate-100 mb-4">API Keys</h2>
+      <ul id="apiKeyList" class="space-y-2 mb-4"></ul>
+      <p id="apiKeysEmpty" class="hidden text-sm text-slate-500 mb-4">No API keys yet.</p>
 
-    <!-- Create new key form -->
-    <div id="createKeySection">
-      <button id="showCreateKeyBtn"
-              class="text-sm font-medium text-indigo-400 hover:text-indigo-300 border border-indigo-700/50 hover:border-indigo-500 px-4 py-2 rounded-lg transition-colors"
-              onclick="document.getElementById('createKeyForm').classList.toggle('hidden'); this.classList.toggle('hidden');">
-        + Create New Key
-      </button>
-      <div id="createKeyForm" class="hidden mt-3">
-        <form method="POST" action="/settings/api-keys" class="flex gap-3 items-end">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-          <div class="flex-1">
-            <label for="keyName" class="block text-xs text-slate-400 mb-1">Key Name</label>
-            <input type="text" id="keyName" name="name" required
-                   placeholder="e.g. CI Pipeline"
-                   class="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <button type="submit"
-                  class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap">
-            Create Key
-          </button>
-          <button type="button"
-                  class="text-slate-400 hover:text-slate-200 text-sm px-3 py-2.5 rounded-lg transition-colors"
-                  onclick="document.getElementById('createKeyForm').classList.add('hidden'); document.getElementById('showCreateKeyBtn').classList.remove('hidden');">
-            Cancel
-          </button>
-        </form>
+      <div id="newKeyNotice" class="hidden mb-4 bg-green-900/40 border border-green-700 text-green-300 text-sm rounded-lg px-4 py-3">
+        New key (shown once, copy it now): <code id="newKeyValue" class="font-mono break-all"></code>
       </div>
-    </div>
-  </div>
 
+      <form id="createKeyForm" class="flex gap-3 items-end">
+        <div class="flex-1">
+          <label for="keyName" class="block text-xs text-slate-400 mb-1">Key Name</label>
+          <input type="text" id="keyName" name="name" required maxlength="100"
+                 placeholder="e.g. CI Pipeline"
+                 class="w-full bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500" />
+        </div>
+        <button type="submit"
+                class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap">
+          Create Key
+        </button>
+      </form>
+    </div>
+
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var token = localStorage.getItem('ts_access_token');
+
+    function el(id) { return document.getElementById(id); }
+    function show(id) { el(id).classList.remove('hidden'); }
+    function hide(id) { el(id).classList.add('hidden'); }
+    function fmt(n) { return (n || 0).toLocaleString(); }
+    function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+    function signedOut() {
+      hide('dashboard');
+      show('signedOut');
+    }
+
+    function api(path, options) {
+      options = options || {};
+      options.headers = Object.assign(
+        { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        options.headers || {}
+      );
+      return fetch(path, options).then(function (r) {
+        if (r.status === 401) { signedOut(); throw new Error('unauthorized'); }
+        if (!r.ok) { throw new Error('Request to ' + path + ' failed (' + r.status + ')'); }
+        return r.status === 204 ? null : r.json();
+      });
+    }
+
+    function cell(text, className) {
+      var td = document.createElement('td');
+      td.className = className;
+      td.textContent = text;
+      return td;
+    }
+
+    function renderUser(user) {
+      el('userName').textContent = user.full_name || user.email;
+      el('planBadge').textContent = capitalize(user.plan) + ' Plan';
+      el('currentPlan').textContent = capitalize(user.plan);
+      if (user.plan === 'free') show('upgradeLink');
+    }
+
+    function renderUsage(usage) {
+      el('usedToday').textContent = fmt(usage.used_today);
+      el('dailyLimit').textContent = fmt(usage.daily_limit);
+      var pct = usage.daily_limit ? Math.min(100, usage.used_today / usage.daily_limit * 100) : 0;
+      var bar = el('usageBar');
+      bar.style.width = pct + '%';
+      bar.classList.remove('bg-indigo-500');
+      bar.classList.add(pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-indigo-500');
+      el('remainingToday').textContent = fmt(usage.remaining_today) + ' remaining today';
+      el('monthGenerations').textContent = fmt(usage.current_month.total_generations);
+      el('monthTokens').textContent = fmt(usage.current_month.total_tokens);
+    }
+
+    function renderGenerations(page) {
+      var body = el('generationsBody');
+      body.textContent = '';
+      if (!page.items.length) { hide('generationsTable'); show('generationsEmpty'); return; }
+      page.items.forEach(function (gen) {
+        var tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-700/20 transition-colors';
+        tr.appendChild(cell(new Date(gen.created_at).toLocaleDateString(), 'px-4 py-3 text-slate-300 text-xs'));
+        tr.appendChild(cell((gen.input_type || '—').replace(/_/g, ' '), 'px-4 py-3 text-slate-300 capitalize'));
+        tr.appendChild(cell(gen.output_format || '—', 'px-4 py-3 text-slate-300 capitalize'));
+        tr.appendChild(cell(gen.status || 'unknown', 'px-4 py-3 text-slate-300'));
+        tr.appendChild(cell(gen.total_tokens ? fmt(gen.total_tokens) : '—', 'px-4 py-3 text-slate-400 text-xs'));
+        body.appendChild(tr);
+      });
+      hide('generationsEmpty');
+      show('generationsTable');
+    }
+
+    function renderApiKeys(keys) {
+      var list = el('apiKeyList');
+      list.textContent = '';
+      if (!keys.length) { show('apiKeysEmpty'); return; }
+      hide('apiKeysEmpty');
+      keys.forEach(function (key) {
+        var li = document.createElement('li');
+        li.className = 'flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 gap-4';
+
+        var info = document.createElement('div');
+        info.className = 'min-w-0 flex-1';
+        var name = document.createElement('p');
+        name.className = 'text-sm font-medium text-slate-200 truncate';
+        name.textContent = key.name || 'Unnamed key';
+        var meta = document.createElement('p');
+        meta.className = 'font-mono text-xs text-slate-500 mt-1';
+        meta.textContent = key.key_prefix + '••••••••  ' +
+          (key.is_active ? 'Active' : 'Revoked') + '  ' +
+          (key.last_used_at ? 'Last used ' + new Date(key.last_used_at).toLocaleDateString() : 'Never used');
+        info.appendChild(name);
+        info.appendChild(meta);
+        li.appendChild(info);
+
+        if (key.is_active) {
+          var revoke = document.createElement('button');
+          revoke.type = 'button';
+          revoke.className = 'shrink-0 text-xs text-red-400 hover:text-red-300 font-medium transition-colors';
+          revoke.textContent = 'Revoke';
+          revoke.addEventListener('click', function () {
+            api('/api-keys/' + encodeURIComponent(key.id), { method: 'DELETE' })
+              .then(loadApiKeys)
+              .catch(showError);
+          });
+          li.appendChild(revoke);
+        }
+        list.appendChild(li);
+      });
+    }
+
+    function showError(err) {
+      if (err && err.message === 'unauthorized') return;
+      el('loadError').textContent = (err && err.message) || 'Something went wrong.';
+      show('loadError');
+    }
+
+    function loadApiKeys() { return api('/api-keys').then(renderApiKeys); }
+
+    el('createKeyForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var name = el('keyName').value.trim();
+      if (!name) return;
+      api('/api-keys', { method: 'POST', body: JSON.stringify({ name: name }) })
+        .then(function (created) {
+          el('newKeyValue').textContent = created.raw_key;
+          show('newKeyNotice');
+          el('keyName').value = '';
+          return loadApiKeys();
+        })
+        .catch(showError);
+    });
+
+    if (!token) { signedOut(); return; }
+
+    api('/auth/me')
+      .then(function (user) {
+        renderUser(user);
+        show('dashboard');
+        return Promise.all([
+          api('/usage').then(renderUsage),
+          api('/generations?page=1&page_size=10').then(renderGenerations),
+          loadApiKeys()
+        ]);
+      })
+      .catch(showError);
+  })();
+</script>
 {% endblock %}

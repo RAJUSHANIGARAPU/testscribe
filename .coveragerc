@@ -6,7 +6,6 @@ omit =
     app/billing.py
     app/limits.py
     app/dependencies.py
-    app/tasks.py
     app/middleware.py
 
 [report]
